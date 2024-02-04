@@ -1,11 +1,19 @@
 package users
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
+)
 
 
-func AddUserRoutes(routes fiber.Router, gnu UserService) {
+func AddUserRoutes(routes fiber.Router, gnu UserService, db *gorm.DB) {
+
     routes.Get("/users/hello", gnu.HelloUser)
-    routes.Post("/users/adduser", gnu.AddUser)
     routes.Get("/users/allusers", gnu.GetAllUsers)
-    routes.Delete("/users/:id", gnu.GetUserByID)
+    routes.Get("/users/:id/details", gnu.GetUserByID)
+
+    // routes.Use(UserExists(db))
+    routes.Post("/users/adduser", gnu.AddUser)
+    routes.Put("/users/:id", gnu.ChangeUserByID)
+    routes.Delete("/users/:id/update", gnu.DeleteUserByID)
 }

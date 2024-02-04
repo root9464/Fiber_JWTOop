@@ -2,6 +2,7 @@ package root
 
 import (
 	"log"
+	"root/services/auth"
 	"root/services/users"
 
 	"github.com/gofiber/fiber/v2"
@@ -11,11 +12,26 @@ import (
 
 // Функция для установки маршрутов
 func AllRo(app *fiber.App, db *gorm.DB) {
+    
     routes := app.Group("/api")
     routes.Use(SetDBState(db))
     userService := users.MethodUserService(db)
-    users.AddUserRoutes(routes, userService)
+    users.AddUserRoutes(routes, userService, db)
+
+    authService := auth.MethodAuthService(db)
+    auth.AddAuthrRoutes(routes, authService, db)
+
 }
+
+func GetDBState(c *fiber.Ctx) *gorm.DB {
+	db, ok := c.Locals("db").(*gorm.DB)
+	if !ok {
+        panic("No database in context")
+	}
+	return db
+}
+
+
 
 // Функция для запуска сервера
 func Root(db *gorm.DB) {

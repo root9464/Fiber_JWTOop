@@ -12,6 +12,8 @@ type UserService interface {
     GetAllUsers(context *fiber.Ctx) error
     GetUserByID(context *fiber.Ctx) error
     HelloUser(context *fiber.Ctx) error
+    ChangeUserByID(context *fiber.Ctx) error
+    DeleteUserByID(context *fiber.Ctx) error
 }
 
 type DataUserService struct {
@@ -53,7 +55,7 @@ func (method *DataUserService) GetAllUsers(c *fiber.Ctx) error {
 func (method *DataUserService) GetUserByID(c *fiber.Ctx) error {
     id := c.Params("id")
     var user User
-	result := method.DB.Where("id = ?", id).Delete(&user)
+	result := method.DB.Where("id = ?", id).First(&user)
 
 	if id == "" {
 		return c.Status(400).SendString(consts.ErrorNil)
@@ -64,8 +66,38 @@ func (method *DataUserService) GetUserByID(c *fiber.Ctx) error {
         }
         return c.Status(500).SendString(consts.ErrorQueryDb + result.Error.Error())
     }
-	return c.Status(200).SendString("Пользователь успешно удален")
+	return c.Status(200).JSON(user)
 }
+
+func (method *DataUserService) ChangeUserByID(c *fiber.Ctx) error {
+    id := c.Params("id")
+    var user User
+    if err := c.BodyParser(&user); err != nil {
+        return c.Status(400).SendString(consts.BadReuest + err.Error())
+    }
+    result := method.DB.Model(&user).Where("id = ?", id).Updates(&user)
+    if result.Error != nil {
+        if result.Error == gorm.ErrRecordNotFound {
+            return c.Status(404).SendString(consts.ErrorNil)
+        }
+        return c.Status(500).SendString(consts.ErrorQueryDb + result.Error.Error())
+    }
+    return c.Status(200).JSON(user)
+}
+
+func (method *DataUserService) DeleteUserByID(c *fiber.Ctx) error {
+    id := c.Params("id")
+    var user User
+    result := method.DB.Where("id = ?", id).Delete(&user)
+    if result.Error != nil {
+        if result.Error == gorm.ErrRecordNotFound {
+            return c.Status(404).SendString(consts.ErrorNil)
+        }
+        return c.Status(500).SendString(consts.ErrorQueryDb + result.Error.Error())
+    }
+    return c.Status(200).SendString("Пользователь успешно удален")
+}
+
 
 func MethodUserService(db *gorm.DB) UserService {
     return &DataUserService{DB: db}
