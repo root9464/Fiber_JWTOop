@@ -1,18 +1,25 @@
 package auth
 
 import (
+	"log"
 	"root/services/consts"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
 type AuthService interface {
 	Register(c *fiber.Ctx) error
     Login(c *fiber.Ctx) error
+    
     Hello(c *fiber.Ctx) error
+    
+    AccessTokenUpdate(c *fiber.Ctx) error
+
+    CreateAccessToken(userID int) (string, error)
+    CreateRefreshToken(userID int) (string, error)
 }
 
 type DataAuthService struct {
@@ -24,6 +31,13 @@ func (method *DataAuthService) Register(c *fiber.Ctx) error {
     if err := c.BodyParser(user); err != nil {
         return c.Status(fiber.StatusBadRequest).SendString(consts.BadReuest + err.Error())
     }
+
+    password, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost); if err != nil {
+        return c.Status(fiber.StatusInternalServerError).SendString(consts.ErrorGenHash + err.Error())
+    }else{
+        user.Password = string(password)
+    }
+
     if method.DB == nil {
         return c.Status(fiber.StatusInternalServerError).SendString(consts.ErrorConnectToDb + method.DB.Error.Error())
     }
@@ -32,39 +46,36 @@ func (method *DataAuthService) Register(c *fiber.Ctx) error {
         return c.Status(fiber.StatusInternalServerError).SendString(consts.ErrorQueryDb + result.Error.Error())
     }
     
-    // Create JWT tokens
-    accessClaims := jwt.MapClaims{
-        "user_id": user.ID,
-        "exp": time.Now().Add(time.Hour * 24).Unix(),
+    access, err := method.CreateAccessToken(user.ID)
+    if err != nil {
+        return c.Status(fiber.StatusInternalServerError).SendString(consts.ErrorCreateAccessToken + err.Error())
+    }
+
+    // Создание токена обновления
+    refresh, err := method.CreateRefreshToken(user.ID)
+    if err != nil {
+        return c.Status(fiber.StatusInternalServerError).SendString(consts.ErrorCreateRefreshToken + err.Error())
     }
     
-    refreshClaims := jwt.MapClaims{
-        "user_id": user.ID,
-        "exp": time.Now().Add(time.Hour * 24 * 7).Unix(),
-    }
-    
-    accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
-    refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-    
-    access, _ := accessToken.SignedString([]byte("your_access_secret_key"))
-    refresh, _ := refreshToken.SignedString([]byte("your_refresh_secret_key"))
-    
-    // Store tokens in the Tokens table
+    access = "Bearer " + access
+
+
     token := &Token{
         UserID:         user.ID,
         JwtAccessToken: access,
-        RefreshToken:   refresh,
+        JwtRefreshToken:   refresh,
         Expiry:         int(time.Now().Add(time.Hour * 24 * 7).Unix()),
     }
+
+
     method.DB.Create(&token)
     
-    user.Token = *token // Update the user's token field
+    user.Token = *token 
     
     return c.Status(fiber.StatusOK).JSON(user)
 }
 
 func (method *DataAuthService) Login(c *fiber.Ctx) error {
-    // Извлечь электронную почту и пароль из запроса
     type LoginRequest struct {
         Email    string `json:"email"`
         Password string `json:"password"`
@@ -76,48 +87,72 @@ func (method *DataAuthService) Login(c *fiber.Ctx) error {
 
     email := request.Email
     password := request.Password
-    
-    // Найти пользователя по предоставленной электронной почте
+
     var user User
     if err := method.DB.Where("email = ?", email).First(&user).Error; err != nil {
-        return c.Status(fiber.StatusUnauthorized).SendString("Invalid email or 1")
+        return c.Status(fiber.StatusUnauthorized).SendString("данного пользователя нету в бд" + err.Error())
     }
+
+    if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+        return c.Status(fiber.StatusUnauthorized).SendString(user.Email + "\n" + email + "\n" + password + "\n" + user.Password)
+    }
+
+
+    //! сдесь ошибка при обновлении токена
     
-    // Проверить пароль
-    // if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-    //     return c.Status(fiber.StatusUnauthorized).SendString(user.Email + "\n" + email + "\n" + password + "\n" + user.Password)
-    // }
-    if user.Password != password {
-        return c.Status(fiber.StatusUnauthorized).SendString("Invalid email or 2")
+    log.Print(user)
+
+    expiry := user.Token.Expiry
+    log.Print(expiry)
+
+
+    newExpiry := int(time.Now().Unix())
+    log.Print(newExpiry)
+
+
+    newToken := Token{
+        UserID:         user.ID,
+        JwtAccessToken: user.Token.JwtAccessToken,
+        JwtRefreshToken: user.Token.JwtRefreshToken,
+        Expiry:         newExpiry,
     }
 
-    // Создать и сохранить JWT-токены
-    accessClaims := jwt.MapClaims{
-        "user_id": user.ID,
-        "exp": time.Now().Add(time.Hour * 24).Unix(),
-    }
-    refreshClaims := jwt.MapClaims{
-        "user_id": user.ID,
-        "exp": time.Now().Add(time.Hour * 24 * 7).Unix(),
-    }
-    accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
-    refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-    access, _ := accessToken.SignedString([]byte("your_access_secret_key"))
-    refresh, _ := refreshToken.SignedString([]byte("your_refresh_secret_key"))
 
-    token := &Token{
-        UserID: user.ID,
-        JwtAccessToken: access,
-        RefreshToken: refresh,
-        Expiry: int(time.Now().Add(time.Hour * 24 * 7).Unix()),
-    }
-    if err := method.DB.Create(&token).Error; err != nil {
-        return c.Status(fiber.StatusInternalServerError).SendString("Failed to create tokens")
+
+    if expiry < newExpiry || user.Token == (Token{
+        UserID:         0,
+        JwtAccessToken: "",
+        JwtRefreshToken: "",
+        Expiry:         user.Token.Expiry,
+    }) {
+        access, err := method.CreateAccessToken(user.ID)
+        if err != nil {
+            return c.Status(fiber.StatusInternalServerError).SendString(consts.ErrorCreateAccessToken + err.Error())
+        }else{
+            access = "Bearer " + access
+            newToken.JwtAccessToken = access
+        }
+
+        refresh, err := method.CreateRefreshToken(user.ID)
+        if err != nil {
+            return c.Status(fiber.StatusInternalServerError).SendString(consts.ErrorCreateRefreshToken + err.Error())
+        }else{
+            newToken.JwtRefreshToken = refresh
+        }
+      
+        log.Print(newToken)
+        newToken.Expiry = newExpiry
+        method.DB.Model(&Token{}).Where("user_id = ?", user.ID).Update("jwt_access_token", newToken)
+
+        newToken.Expiry = int(time.Now().Add(time.Hour * 24 * 7).Unix())
+        user.Token = newToken
     }
 
-    user.Token = *token // Обновить поле токена пользователя
     return c.Status(fiber.StatusOK).JSON(user)
 }
+
+
+
 
 func (method *DataAuthService) Hello(c *fiber.Ctx) error {
     return c.SendString("Hello, auth!")

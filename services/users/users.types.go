@@ -17,9 +17,9 @@ type User struct {
 }
 
 type Token struct {
-	ID             int    `gorm:"primaryKey; autoIncrement" json:"id"`
-	UserID         int    `gorm:"not null" json:"user_id"`
-	JwtAccessToken string `gorm:"not null" json:"jwt_access_token"`
-	RefreshToken   string `gorm:"not null" json:"refresh_token"`
-	Expiry         int    `json:"expiry"`
+	ID              int    `gorm:"primaryKey; autoIncrement" json:"id"`
+	UserID          int    `gorm:"not null" json:"user_id"`
+	JwtAccessToken  string `gorm:"not null" json:"jwt_access_token"`
+	JwtRefreshToken string `gorm:"not null" json:"jwt_refresh_token"`
+	Expiry          int    `json:"expiry"`
 }

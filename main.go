@@ -20,6 +20,8 @@ func main() {
 	err = db.AutoMigrate(&users.User{}, &users.Token{})
 	if err != nil {
 		panic("failed to perform migration")
+	}else {
+		fmt.Println("migration successful")
 	}
 	root.Root(db)
 	
