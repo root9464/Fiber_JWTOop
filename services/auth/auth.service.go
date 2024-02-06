@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"log"
 	"root/services/consts"
 	"time"
 
@@ -13,14 +14,8 @@ import (
 type AuthService interface {
 	Register(c *fiber.Ctx) error
     Login(c *fiber.Ctx) error
-    
     Hello(c *fiber.Ctx) error
-    
     AccessTokenUpdate(c *fiber.Ctx) error
-
-    CreateAccessToken(userID int) (string, error)
-    CreateRefreshToken(userID int) (string, error)
-   
 }
 
 type DataAuthService struct {
@@ -52,13 +47,12 @@ func (method *DataAuthService) Register(c *fiber.Ctx) error {
         return c.Status(fiber.StatusInternalServerError).SendString(consts.ErrorCreateAccessToken + err.Error())
     }
 
-    // Создание токена обновления
     refresh, err := method.CreateRefreshToken(user.ID)
     if err != nil {
         return c.Status(fiber.StatusInternalServerError).SendString(consts.ErrorCreateRefreshToken + err.Error())
     }
     
-    access = "Bearer " + access
+    access = "Bearer" + access
 
 
     token := &Token{
@@ -105,24 +99,23 @@ func (method *DataAuthService) Login(c *fiber.Ctx) error {
         user.Token = token
     }
 
-    access, err := method.CreateAccessToken(user.ID)
-    if err != nil {
-        return c.Status(fiber.StatusInternalServerError).SendString(consts.ErrorCreateAccessToken + err.Error())
-    }
-
-    refresh, err := method.CreateRefreshToken(user.ID)
-    if err != nil {
-        return c.Status(fiber.StatusInternalServerError).SendString(consts.ErrorCreateRefreshToken + err.Error())
-    }
 
     tokenData, err := jwt.Parse(token.JwtAccessToken, func(token *jwt.Token) (interface{}, error) {
         return []byte("your_access_secret_key"), nil
     }); if err != nil {
-        token.Expiry = int(tokenData.Claims.(jwt.MapClaims)["exp"].(float64))
-        token.JwtAccessToken = "Bearer " + access
-        token.JwtRefreshToken = refresh
-    }
+        if _, ok := tokenData.Claims.(jwt.MapClaims); !ok || !tokenData.Valid && time.Now().Unix() > int64(tokenData.Claims.(jwt.MapClaims)["exp"].(float64)){
+            newAccessToken, newRefreshToken, err := method.CreateTokens(user.ID)
+            if err != nil {
+                return c.Status(fiber.StatusInternalServerError).SendString("fff" + err.Error())
+            }
     
+            token.JwtAccessToken = newAccessToken
+            token.JwtRefreshToken = newRefreshToken
+        }else {
+            log.Println("токены не устарели")
+        }
+    }
+
     return c.Status(fiber.StatusOK).JSON(user)
 }
 

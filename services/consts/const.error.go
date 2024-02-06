@@ -9,4 +9,5 @@ const (
 	ErrorGenHash            = "Ошибка хеширования пароля"
 	ErrorCreateAccessToken  = "Ошибка создания access token"
 	ErrorCreateRefreshToken = "Ошибка создания refresh token"
+	ErrorCreateTokens       = "ошибка создания токенов"
 )
