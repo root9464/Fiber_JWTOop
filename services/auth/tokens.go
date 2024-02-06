@@ -55,7 +55,7 @@ func (method *DataAuthService) AccessTokenUpdate(c *fiber.Ctx) error {
 func (method *DataAuthService) CreateRefreshToken(userID int) (string, error) {
 	refreshClaims := jwt.MapClaims{
 		"user_id": userID,
-		"exp":     time.Now().Add(time.Second * 100).Unix(),
+		"exp":     time.Now().Add(time.Second * 10).Unix(),
 	}
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
 	refresh, err := refreshToken.SignedString([]byte("your_refresh_secret_key"))
@@ -87,3 +87,5 @@ func (method *DataAuthService) CreateAccessToken(userID int) (string, error) {
 
 	return access, nil
 }
+
+
